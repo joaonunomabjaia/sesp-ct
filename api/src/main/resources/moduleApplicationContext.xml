@@ -26,7 +26,7 @@
     <bean parent="serviceContext">
         <property name="moduleService">
             <list>
-                <value>org.openmrs.module.sespct.api.PedidoService</value>
+                <value>org.openmrs.module.sespct.api.service.PedidoService</value>
                 <ref bean="pedidoServiceImpl" />
             </list>
         </property>

@@ -1,7 +1,7 @@
 package org.openmrs.module.sespct.scheduler;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.openmrs.module.sespct.api.PedidoService;
+import org.openmrs.module.sespct.api.service.PedidoService;
 import org.openmrs.module.sespct.config.CTConfig;
 import org.openmrs.module.sespct.ct.CtClient;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +29,7 @@ public class CatchUpScheduler {
 				for (JsonNode elem : list) {
 					String id = elem.path("requestId").asText(null);
 					if (id != null) {
-						pedidoService.fetchAndUpsertFromCtAsync(id, cfg.getDefaultFacility());
+						pedidoService.fetchAndCreateFromCtAsync(id, cfg.getDefaultFacility());
 					}
 				}
 			}

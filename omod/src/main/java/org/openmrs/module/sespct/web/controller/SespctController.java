@@ -1,7 +1,7 @@
 package org.openmrs.module.sespct.web.controller;
 
 import org.openmrs.api.context.Context;
-import org.openmrs.module.sespct.api.PedidoService;
+import org.openmrs.module.sespct.api.service.PedidoService;
 import org.openmrs.module.sespct.api.model.Pedido;
 import java.io.IOException;
 import javax.servlet.http.HttpServletResponse;

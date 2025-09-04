@@ -11,7 +11,9 @@ import org.openmrs.module.sespct.api.model.Pedido;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 public class PedidoDaoImpl implements PedidoDao {
 	
@@ -74,9 +76,15 @@ public class PedidoDaoImpl implements PedidoDao {
 		pedido.setVoided(true);
 		this.getCurrentSession().saveOrUpdate(pedido);
 	}
-	
-	@Override
-	public void saveOrUpdateFromJson(JsonNode dp) {
-		
-	}
+
+    @Override
+    public Pedido saveOrFromJson(Pedido pedido) {
+        try {            // Persistir
+            return savePedido(pedido);
+        } catch (Exception e) {
+            log.error("Erro ao salvar Pedido a partir do JsonNode", e);
+        }
+        return null;
+    }
+
 }

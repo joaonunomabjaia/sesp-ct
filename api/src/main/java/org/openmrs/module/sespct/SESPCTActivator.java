@@ -11,7 +11,7 @@ package org.openmrs.module.sespct;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.openmrs.module.sespct.api.PedidoService;
+import org.openmrs.module.sespct.api.service.PedidoService;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.BaseModuleActivator;
 

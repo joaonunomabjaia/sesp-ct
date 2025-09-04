@@ -52,6 +52,6 @@ public interface PedidoDao {
 	 * @param pedido the Pedido to delete
 	 */
 	void deletePedido(Pedido pedido);
-	
-	void saveOrUpdateFromJson(JsonNode dp);
+
+    Pedido saveOrFromJson(Pedido pedido);
 }

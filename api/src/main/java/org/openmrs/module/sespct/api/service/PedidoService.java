@@ -1,5 +1,6 @@
-package org.openmrs.module.sespct.api;
+package org.openmrs.module.sespct.api.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.openmrs.api.OpenmrsService;
 import org.openmrs.module.sespct.api.model.Pedido;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,5 +29,7 @@ public interface PedidoService extends OpenmrsService {
 	
 	void createDummyData();
 	
-	void fetchAndUpsertFromCtAsync(String requestId, String facilityCode);
+	void fetchAndCreateFromCtAsync(String requestId, String facilityCode);
+
+    Pedido saveFromJson(JsonNode dp);
 }

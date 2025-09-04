@@ -3,6 +3,11 @@ package org.openmrs.module.sespct.ct;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.openmrs.module.sespct.api.service.RespostaService;
+import org.openmrs.module.sespct.api.model.Resposta;
+import org.openmrs.module.sespct.api.service.PedidoService;
+import org.openmrs.module.sespct.api.model.Pedido;
+import org.openmrs.module.sespct.api.service.RespostaService;
 import org.openmrs.module.sespct.config.CTConfig;
 import org.openmrs.module.sespct.oauth.OAuthService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,7 +15,10 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.http.HttpHeaders;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Cliente HTTP do CT (Comité Terapêutico). Compatível com Spring 4.x / Java 8. Endpoints CT usados:
@@ -41,7 +49,12 @@ public class CtClientImpl implements CtClient {
 	private final CTConfig cfg;
 	
 	private final ObjectMapper mapper = new ObjectMapper();
-	
+
+    @Autowired
+    private PedidoService pedidoService;
+    @Autowired
+    private RespostaService  respostaService;
+
 	@Autowired
 	public CtClientImpl(RestTemplate rest, OAuthService oauth, CTConfig cfg) {
 		this.rest = rest;
@@ -50,18 +63,24 @@ public class CtClientImpl implements CtClient {
 	}
 	
 	/* ===================== Métodos do contrato ===================== */
-	
-	@Override
-	public JsonNode getPedidoById(String id, String facility) {
-		HttpHeaders h = authJsonHeaders();
-		String f = facility != null && facility.length() > 0 ? facility : cfg.getDefaultFacility();
-		
-		ResponseEntity<JsonNode> r = rest.exchange(cfg.getCtBaseUrl() + E_PEDIDO_BY_ID, HttpMethod.GET,
-		    new HttpEntity<Void>(h), JsonNode.class, id, f);
-		return r.getBody();
-	}
-	
-	/**
+
+    @Override
+    public Pedido getPedidoById(String id, String facility) {
+        HttpHeaders h = authJsonHeaders();
+        String f = (facility != null && !facility.isEmpty()) ? facility : cfg.getDefaultFacility();
+
+        ResponseEntity<JsonNode> r = rest.exchange(cfg.getCtBaseUrl() + E_PEDIDO_BY_ID,
+                HttpMethod.GET, new HttpEntity<Void>(h), JsonNode.class, id, f);
+
+        JsonNode dp = r.getBody().path("dadosPedido");
+        if (dp != null && !dp.isEmpty()) {
+            return pedidoService.saveFromJson(dp); // ← transforma e salva via service
+        }
+        return null;
+    }
+
+
+    /**
 	 * Pesquisa “desde” (since ISO-8601) para uma unidade. Implementado como POST para /pesquisa,
 	 * pois o CT expõe pesquisa via POST. O shape do JSON pode ser ajustado conforme o contrato
 	 * oficial do CT.
@@ -85,14 +104,36 @@ public class CtClientImpl implements CtClient {
 	/* ===================== Utilidades adicionais ===================== */
 	
 	/** GET /api/v1/pedido-troca-linhas-respostas/{pedidoId} */
-	public JsonNode getRespostasDoPedido(String pedidoId) {
-		HttpHeaders h = authJsonHeaders();
-		ResponseEntity<JsonNode> r = rest.exchange(cfg.getCtBaseUrl() + E_RESPOSTAS_BY_PEDIDO, HttpMethod.GET,
-		    new HttpEntity<Void>(h), JsonNode.class, pedidoId);
-		return r.getBody();
-	}
-	
-	/**
+
+    @Override
+    public List<Resposta> getRespostasDoPedido(String pedidoId) {
+        HttpHeaders h = authJsonHeaders();
+        ResponseEntity<JsonNode> r = rest.exchange(
+                cfg.getCtBaseUrl() + E_RESPOSTAS_BY_PEDIDO,
+                HttpMethod.GET,
+                new HttpEntity<Void>(h),
+                JsonNode.class,
+                pedidoId
+        );
+
+        JsonNode body = r.getBody();
+        List<Resposta> respostas = new ArrayList<>();
+
+        if (body != null && body.has("data")) {
+            for (JsonNode node : body.path("data")) {
+                JsonNode dadosResposta = node.path("dadosResposta");
+                if (!dadosResposta.isMissingNode()) {
+                    Resposta resp = respostaService.saveFromJson(dadosResposta);
+                    respostas.add(resp);
+                }
+            }
+        }
+
+        return respostas;
+    }
+
+
+    /**
 	 * POST /api/v1/pedido-troca-linhas/offset-pagination
 	 * 
 	 * @param page página (0-based ou 1-based conforme API do CT)

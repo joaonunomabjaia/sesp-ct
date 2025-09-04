@@ -5,7 +5,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
-import org.openmrs.module.sespct.api.PedidoService;
+import org.openmrs.module.sespct.api.service.PedidoService;
 import org.openmrs.module.sespct.api.dao.PedidoDao;
 import org.openmrs.module.sespct.api.model.Pedido;
 import org.openmrs.module.sespct.api.model.HistoriaTarv;
@@ -236,20 +236,154 @@ public class PedidoServiceImpl extends BaseOpenmrsService implements PedidoServi
 			log.error("Error creating dummy Pedido data", e);
 		}
 	}
-	
-	@Async("sespctTaskExecutor")
-	@Override
-	public void fetchAndUpsertFromCtAsync(String requestId, String facilityCode) {
-		try {
-			String fac = (facilityCode != null && !facilityCode.isEmpty()) ? facilityCode : cfg.getDefaultFacility();
-			JsonNode full = ctClient.getPedidoById(requestId, fac);
-			JsonNode dp = full.path("dadosPedido"); // ajusta se a API do CT usar outro “root”
-			// Idempotente: o DAO deve fazer upsert por pedidoId (UNIQUE)
-			pedidoDao.saveOrUpdateFromJson(dp);
-		}
-		catch (Exception e) {
-			// TODO: retry/backoff e DLQ (se usar fila)
-			e.printStackTrace();
-		}
-	}
+
+    private Pedido mapJsonToPedido(JsonNode dp) {
+        Pedido pedido = new Pedido();
+        pedido.setUuid(UUID.randomUUID().toString());
+        pedido.setDateCreated(new Date());
+
+        // Campos principais do Pedido
+        pedido.setPedidoId(dp.path("pedidoId").asText(null));
+        pedido.setSolicitadoPor(dp.path("solicitadoPor").asText(null));
+        pedido.setEstado(dp.path("estado").asText("Sem resposta"));
+        pedido.setCausa(dp.path("causa").asText(null));
+        pedido.setVersao(dp.path("versao").asText(null));
+        pedido.setOrigem(dp.path("origem").asText(null));
+        pedido.setTipoFormulario(dp.path("tipoFormulario").asText(null));
+
+        // Data de submissão
+        String dataSubmissaoStr = dp.path("dataSubmissao").asText(null);
+        if (dataSubmissaoStr != null) {
+            try {
+                pedido.setDataSubmissao(javax.xml.bind.DatatypeConverter.parseDateTime(dataSubmissaoStr).getTime());
+            } catch (Exception e) {
+                log.warn("Erro ao parsear dataSubmissao: " + dataSubmissaoStr, e);
+            }
+        }
+
+        // DadosUtente
+        JsonNode du = dp.path("dadosUtente");
+        if (!du.isMissingNode()) {
+            pedido.getDadosUtente().setNomeCompleto(du.path("nomeCompleto").asText(null));
+            pedido.getDadosUtente().setIniciais(du.path("iniciais").asText(null));
+            pedido.getDadosUtente().setNid(du.path("nid").asText(null));
+            pedido.getDadosUtente().setIdade(du.path("idade").asDouble(0));
+            pedido.getDadosUtente().setSexo(du.path("sexo").asText(null));
+            pedido.getDadosUtente().setProvincia(du.path("provincia").asText(null));
+            pedido.getDadosUtente().setDistrito(du.path("distrito").asText(null));
+            pedido.getDadosUtente().setUnidadeSanitaria(du.path("unidadeSanitaria").asText(null));
+            pedido.getDadosUtente().setCodigoUnidadeSanitaria(du.path("codigoUnidadeSanitaria").asText(null));
+            pedido.getDadosUtente().setPeso(du.path("peso").asDouble(0));
+            pedido.getDadosUtente().setGestante(du.path("gestante").asText(null));
+            pedido.getDadosUtente().setDataProvavelParto(du.path("dataProvavelParto").isTextual() ? parseDate(du.path("dataProvavelParto").asText()) : null);
+            pedido.getDadosUtente().setLactante(du.path("lactante").asText(null));
+            pedido.getDadosUtente().setDataParto(du.path("dataParto").isTextual() ? parseDate(du.path("dataParto").asText()) : null);
+            pedido.getDadosUtente().setEstadioOms(du.path("estadioOms").asText(null));
+            pedido.getDadosUtente().setEstadioOmsMotivo(du.path("estadioOmsMotivo").asText(null));
+        }
+
+        // ReportarFalencia
+        JsonNode rf = dp.path("reportarFalencia");
+        if (!rf.isMissingNode()) {
+            pedido.getReportarFalencia().setHistoriaClinica(rf.path("historiaClinica").asText(null));
+            pedido.getReportarFalencia().setHistoriaAdesao(rf.path("historiaAdesao").asText(null));
+            pedido.getReportarFalencia().setTratamentoTbAtivo(rf.path("tratamentoTbAtivo").asText(null));
+        }
+
+        // DadosClinico
+        JsonNode dc = dp.path("dadosClinico");
+        if (!dc.isMissingNode()) {
+            pedido.getDadosClinico().setNome(dc.path("nome").asText(null));
+            pedido.getDadosClinico().setCategoriaProfissional(dc.path("categoriaProfissional").asText(null));
+            pedido.getDadosClinico().setTelefone(dc.path("telefone").asText(null));
+            pedido.getDadosClinico().setEmail(dc.path("email").asText(null));
+        }
+
+        // LinhaSolicitada
+        JsonNode ls = dp.path("linhaSolicitada");
+        if (!ls.isMissingNode()) {
+            pedido.getLinhaSolicitada().setLinha(ls.path("linha").asText(null));
+            pedido.getLinhaSolicitada().setAnexo(ls.path("anexo").asText(null));
+        }
+
+        // HistoriaTarv (array)
+        JsonNode hts = dp.path("historiaTarv");
+        if (hts.isArray()) {
+            for (JsonNode ht : hts) {
+                HistoriaTarv historia = new HistoriaTarv();
+                historia.setUuid(UUID.randomUUID().toString());
+                historia.setCreator(Context.getAuthenticatedUser());
+                historia.setDateCreated(new Date());
+                historia.setPedido(pedido);
+                historia.setDataInicio(parseDate(ht.path("dataInicio").asText(null)));
+                historia.setDataTermino(parseDate(ht.path("dataTermino").asText(null)));
+                historia.setEsquemaTarv(ht.path("esquemaTarv").asText(null));
+                pedido.getHistoriaTarv().add(historia);
+            }
+        }
+
+        // DadosLaboratorioCD4 (array)
+        JsonNode cds = dp.path("dadosLaboratorioCD4");
+        if (cds.isArray()) {
+            for (JsonNode cd : cds) {
+                DadosLaboratorioCD4 cd4 = new DadosLaboratorioCD4();
+                cd4.setUuid(UUID.randomUUID().toString());
+                cd4.setCreator(Context.getAuthenticatedUser());
+                cd4.setDateCreated(new Date());
+                cd4.setPedido(pedido);
+                cd4.setData(parseDate(cd.path("data").asText(null)));
+                cd4.setCd4(cd.path("cd4").asInt(0));
+                cd4.setCd4Percentagem(cd.path("cd4Percentagem").asDouble(0));
+                pedido.getDadosLaboratorioCD4().add(cd4);
+            }
+        }
+
+        // DadosLaboratorioCargaViral (array)
+        JsonNode vls = dp.path("dadosLaboratorioCargaViral");
+        if (vls.isArray()) {
+            for (JsonNode vl : vls) {
+                DadosLaboratorioCargaViral carga = new DadosLaboratorioCargaViral();
+                carga.setUuid(UUID.randomUUID().toString());
+                carga.setCreator(Context.getAuthenticatedUser());
+                carga.setDateCreated(new Date());
+                carga.setPedido(pedido);
+                carga.setData(parseDate(vl.path("data").asText(null)));
+                carga.setCargaViral(vl.path("cargaViral").asLong(0));
+                pedido.getDadosLaboratorioCargaViral().add(carga);
+            }
+        }
+
+        return pedido;
+    }
+
+    // Helper para parse de datas
+    private Date parseDate(String iso) {
+        if (iso == null) return null;
+        try {
+            return javax.xml.bind.DatatypeConverter.parseDateTime(iso).getTime();
+        } catch (Exception e) {
+            log.warn("Erro ao parsear data ISO: " + iso, e);
+            return null;
+        }
+    }
+
+    @Override
+    public Pedido saveFromJson(JsonNode dp) {
+        if (dp == null || dp.isEmpty()) return null;
+        return pedidoDao.saveOrFromJson(mapJsonToPedido(dp));
+    }
+
+    @Async("sespctTaskExecutor")
+    @Override
+    public void fetchAndCreateFromCtAsync(String requestId, String facilityCode) {
+        try {
+            String fac = (facilityCode != null && !facilityCode.isEmpty()) ? facilityCode : cfg.getDefaultFacility();
+            JsonNode dp = ctClient.getPedidoById(requestId, fac);
+            Pedido pedido = mapJsonToPedido(dp);
+            pedidoDao.saveOrFromJson(pedido);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
 }
